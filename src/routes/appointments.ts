@@ -2,38 +2,57 @@ import { Router } from "express";
 
 import { generateTimeSlots } from "../utils/timeSlots";
 import { Appointment } from "../models/appointment";
+import { startOfWeek, addDays, format, isBefore, isSameDay } from "date-fns";
 
 const router = Router();
 
 // Get available time slots for a specific date
 router.get("/available-times", async (req, res) => {
   try {
-    const date = req.query.date as string;
-    console.log("date", date);
-    if (!date) {
-      return res.status(400).send({ error: "Date is required" });
-    }
-
-    const formattedDate = date.split("/").reverse().join("-");
+    const currentDate = new Date();
+    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+    const weekEnd = addDays(weekStart, 6);
 
     const startTime = "09:00";
     const endTime = "18:00";
     const timeSlots = generateTimeSlots(startTime, endTime);
 
     // Find appointments for the given date
-    const appointments = await Appointment.find({ date: formattedDate });
+    const appointments = await Appointment.find({
+      date: {
+        $gte: format(weekStart, "yyyy-MM-dd"),
+        $lte: format(weekEnd, "yyyy-MM-dd"),
+      },
+    });
     console.log("appoint", appointments);
 
-    // Extract booked times from appointments
-    const bookedTimes = appointments.map((app) => app.time);
+    const availableTimesByDay: Record<string, string[]> = {};
 
-    // Filter out booked times from timeSlots
-    const availableTimes = timeSlots.filter(
-      (slot) => !bookedTimes.includes(slot)
-    );
-    console.log("bookedtimes", bookedTimes);
-    console.log("availableTimes", availableTimes);
-    res.status(200).send({ availableTimes });
+    for (let i = 0; i < 7; i++) {
+      const currentDay = addDays(weekStart, i);
+      const formattedCurrentDay = format(currentDay, "yyyy-MM-dd");
+
+      // Skip previous days
+      if (
+        isBefore(currentDay, currentDate) &&
+        !isSameDay(currentDay, currentDate)
+      ) {
+        continue;
+      }
+
+      // Extract booked times for the current day
+      const bookedTimes = appointments
+        .filter((app) => app.date === formattedCurrentDay)
+        .map((app) => app.time);
+
+      // Filter out booked times from timeSlots
+      const availableTimes = timeSlots.filter(
+        (slot) => !bookedTimes.includes(slot)
+      );
+
+      availableTimesByDay[formattedCurrentDay] = availableTimes;
+    }
+    res.status(200).send({ availableTimesByDay });
   } catch (error: any) {
     console.error("Error fetching available times:", error);
     res.status(500).send({ error: error.message });
