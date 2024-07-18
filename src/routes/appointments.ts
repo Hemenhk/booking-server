@@ -80,9 +80,22 @@ router.post("/", async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
-    const appointments = await Appointment.find().populate("service");
+    const { startDate, endDate } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).send({ error: "Start date and end date are required" });
+    }
+
+    const appointments = await Appointment.find({
+      date: {
+        $gte: format(new Date(startDate as string), "yyyy-MM-dd"),
+        $lte: format(new Date(endDate as string), "yyyy-MM-dd"),
+      },
+    }).populate("service");
+
     res.status(200).send(appointments);
   } catch (error: any) {
+    console.error("Error fetching appointments:", error);
     res.status(500).send({ error: error.message });
   }
 });
